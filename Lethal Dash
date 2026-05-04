@@ -1,0 +1,168 @@
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local player = game.Players.LocalPlayer
+
+local scriptActive = true
+local Config = {
+    Enabled = true,
+    LethalEnabled = true,
+    LethalAnim = "rbxassetid://12296113986",
+    LethalDelay = 1.65,
+    LethalJump = 60,
+    LethalAccuracy = 12, 
+    LethalCancelDelay = 0.4,
+    LethalMode = "V1",
+    CancelEnabled = true,
+    NoClipEnabled = true,
+    DashRange = 10
+}
+
+local isNoclipping = false
+local advancedOpen = false
+
+--// HÀM DASH GỐC (REMOTE)
+local function fireDash()
+    local char = player.Character
+    if not char then return end
+    local communicate = char:FindFirstChild("Communicate")
+    if communicate then
+        local args = {{Dash = Enum.KeyCode.W, Key = Enum.KeyCode.Q, Goal = "KeyPress"}}
+        communicate:FireServer(unpack(args))
+    end
+end
+
+--// HÀM BỔ TRỢ
+local function clip()
+    isNoclipping = false
+    if player.Character then
+        local hum = player.Character:FindFirstChild("Humanoid")
+        if hum then hum.AutoRotate = true end
+    end
+end
+
+--// FORCECANCEL: CHẾ ĐỘ INSTANT (BỎ LEGIT)
+local function forceCancel()
+    clip()
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        -- Dọn sạch các lực đẩy cũ
+        for _, obj in pairs(hrp:GetChildren()) do
+            if obj:IsA("BodyVelocity") or obj:IsA("LinearVelocity") or obj:IsA("Attachment") or obj:IsA("BodyAngularVelocity") or obj:IsA("BodyGyro") then
+                obj:Destroy()
+            end
+        end
+        -- Dừng khựng ngay lập tức
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    end
+end
+
+local function getTorsoTarget()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local params = OverlapParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances = {char}
+    local parts = workspace:GetPartBoundsInRadius(char.HumanoidRootPart.Position, Config.DashRange, params)
+    local target, dist = nil, Config.DashRange
+    for _, part in pairs(parts) do
+        local model = part:FindFirstAncestorOfClass("Model")
+        if model and model:FindFirstChild("Humanoid") and model ~= char then
+            local torso = model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso") or model:FindFirstChild("HumanoidRootPart")
+            if torso then
+                local d = (char.HumanoidRootPart.Position - torso.Position).Magnitude
+                if d < dist then dist = d; target = torso end
+            end
+        end
+    end
+    return target
+end
+
+--// GUI SYSTEM (BỎ HIỆU ỨNG ĐỘNG)
+local sg = Instance.new("ScreenGui", game.CoreGui); sg.Name = "Boommy_Lethal_V2_Fixed"
+local main = Instance.new("Frame", sg); main.Size = UDim2.new(0, 240, 0, 80); main.Position = UDim2.new(0.5, -120, 0.2, 0); main.BackgroundColor3 = Color3.fromRGB(10, 10, 10); main.BorderSizePixel = 0; main.ClipsDescendants = true; Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+local bgGradient = Instance.new("UIGradient", main); bgGradient.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(5,5,5)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(30,30,30)), ColorSequenceKeypoint.new(1, Color3.fromRGB(5,5,5))})
+local stroke = Instance.new("UIStroke", main); stroke.Thickness = 2.5; local strokeGradient = Instance.new("UIGradient", stroke); strokeGradient.Color = ColorSequence.new(Color3.fromRGB(0, 120, 255))
+local top = Instance.new("Frame", main); top.Size = UDim2.new(1, 0, 0, 80); top.BackgroundTransparency = 1
+local title = Instance.new("TextLabel", top); title.Size = UDim2.new(0.65, 0, 0.4, 0); title.Position = UDim2.new(0.08, 0, 0.15, 0); title.Text = "BOOMMY LETHAL"; title.Font = Enum.Font.Michroma; title.TextSize = 15; title.TextColor3 = Color3.fromRGB(255, 255, 255); title.BackgroundTransparency = 1
+local toggle = Instance.new("TextButton", top); toggle.Size = UDim2.new(0, 50, 0, 26); toggle.Position = UDim2.new(0.72, 0, 0.18, 0); toggle.BackgroundColor3 = Color3.fromRGB(0, 120, 255); toggle.Text = "ON"; toggle.TextColor3 = Color3.fromRGB(255,255,255); toggle.Font = Enum.Font.GothamBold; toggle.TextSize = 12; Instance.new("UICorner", toggle)
+local advBtn = Instance.new("TextButton", top); advBtn.Size = UDim2.new(0, 100, 0, 20); advBtn.Position = UDim2.new(0.08, 0, 0.55, 0); advBtn.BackgroundTransparency = 1; advBtn.Text = "Advanced >"; advBtn.Font = Enum.Font.SourceSansBold; advBtn.TextSize = 14; advBtn.TextColor3 = Color3.fromRGB(0, 200, 255); advBtn.TextXAlignment = Enum.TextXAlignment.Left
+local advFrame = Instance.new("Frame", main); advFrame.Size = UDim2.new(0.85, 0, 0, 210); advFrame.Position = UDim2.new(0.08, 0, 0, 80); advFrame.BackgroundTransparency = 1; local listLayout = Instance.new("UIListLayout", advFrame); listLayout.Padding = UDim.new(0, 8)
+local AccuracyLabel, AccuracyInput
+
+local function createSetting(name, configKey)
+    local f = Instance.new("Frame", advFrame); f.Size = UDim2.new(1, 0, 0, 25); f.BackgroundTransparency = 1
+    local l = Instance.new("TextLabel", f); l.Size = UDim2.new(0.5, 0, 1, 0); l.Text = name; l.TextColor3 = Color3.fromRGB(255,255,255); l.Font = Enum.Font.SourceSans; l.TextSize = 13; l.TextXAlignment = Enum.TextXAlignment.Left; l.BackgroundTransparency = 1
+    local i = Instance.new("TextBox", f); i.Size = UDim2.new(0.4, 0, 1, 0); i.Position = UDim2.new(0.6, 0, 0, 0); i.BackgroundColor3 = Color3.fromRGB(30, 30, 30); i.Text = tostring(Config[configKey]); i.TextColor3 = Color3.fromRGB(0, 255, 255); i.TextSize = 12; Instance.new("UICorner", i)
+    if configKey == "LethalAccuracy" then AccuracyLabel = l; AccuracyInput = i end
+    i.FocusLost:Connect(function() local n = tonumber(i.Text) if n then Config[configKey] = n end end)
+end
+createSetting("Delay:", "LethalDelay"); createSetting("Velo:", "LethalJump"); createSetting("Accuracy:", "LethalAccuracy"); createSetting("Cancel:", "LethalCancelDelay")
+
+local modeBtn = Instance.new("TextButton", advFrame); modeBtn.Size = UDim2.new(1, 0, 0, 28); modeBtn.BackgroundColor3 = Color3.fromRGB(40,40,40); modeBtn.Text = "Mode: V1"; modeBtn.TextColor3 = Color3.fromRGB(255,255,255); modeBtn.Font = Enum.Font.SourceSansBold; Instance.new("UICorner", modeBtn)
+modeBtn.MouseButton1Click:Connect(function()
+    Config.LethalMode = (Config.LethalMode == "V1") and "V2" or "V1"
+    modeBtn.Text = "Mode: " .. Config.LethalMode
+    if Config.LethalMode == "V2" then AccuracyLabel.Text = "Flip Delay:"; Config.LethalAccuracy = 0.25 else AccuracyLabel.Text = "Accuracy:"; Config.LethalAccuracy = 15 end
+    AccuracyInput.Text = tostring(Config.LethalAccuracy)
+end)
+
+advBtn.MouseButton1Click:Connect(function()
+    advancedOpen = not advancedOpen
+    local targetSize = advancedOpen and UDim2.new(0, 240, 0, 275) or UDim2.new(0, 240, 0, 80)
+    advBtn.Text = advancedOpen and "Advanced v" or "Advanced >"
+    TweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Sine), {Size = targetSize}):Play()
+end)
+
+--// CORE SETUP
+local function setup(char)
+    local hum = char:WaitForChild("Humanoid"); local root = char:WaitForChild("HumanoidRootPart")
+    hum.AnimationPlayed:Connect(function(track)
+        if not scriptActive or not Config.Enabled then return end
+        if track.Animation.AnimationId == Config.LethalAnim and Config.LethalEnabled then
+            local torso = getTorsoTarget()
+            if not torso then clip() return end
+            task.wait(Config.LethalDelay)
+            if not scriptActive then return end
+            root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, Config.LethalJump, root.AssemblyLinearVelocity.Z)
+            isNoclipping = true; fireDash()
+            
+            -- DÙNG HEARTBEAT CHO XOAY (THAY TASKSPAWN)
+            local startT = tick(); local flipped = false; local currentMode = Config.LethalMode 
+            local forwardDir = (torso.Position - root.Position).Unit; local sideVec = Vector3.new(-forwardDir.Z, 0, forwardDir.X)
+            local bav = (currentMode == "V1") and Instance.new("BodyAngularVelocity", root) or nil
+            if bav then bav.MaxTorque = Vector3.new(0, 1000000, 0); bav.P = 15000 end
+            
+            local conn; conn = RunService.Heartbeat:Connect(function()
+                if not scriptActive then if bav then bav:Destroy() end clip(); conn:Disconnect(); return end
+                local elapsed = tick() - startT; hum.AutoRotate = false
+                if currentMode == "V1" then
+                    local angle = (elapsed / 0.45) * (math.pi / 1.5)
+                    local radius = Config.LethalAccuracy * (1 - math.clamp(elapsed / 0.45, 0, 1))
+                    local targetLookPos = torso.Position + (sideVec * math.cos(angle) + forwardDir * math.sin(angle)) * radius
+                    local lookAtCF = CFrame.lookAt(root.Position, Vector3.new(targetLookPos.X, root.Position.Y, targetLookPos.Z))
+                    local relativeCF = root.CFrame:Inverse() * lookAtCF; local _, y, _ = relativeCF:ToEulerAnglesXYZ()
+                    if bav and bav.Parent then bav.AngularVelocity = Vector3.new(0, y * 30, 0) end
+                elseif elapsed >= Config.LethalAccuracy and not flipped then
+                    root.CFrame = root.CFrame * CFrame.Angles(0, math.pi, 0); flipped = true
+                end
+                local distXZ = (Vector2.new(root.Position.X, root.Position.Z) - Vector2.new(torso.Position.X, torso.Position.Z)).Magnitude
+                if Config.CancelEnabled and elapsed > Config.LethalCancelDelay and distXZ < 2.2 then
+                    if bav then bav:Destroy() end forceCancel(); conn:Disconnect(); return
+                end
+                if not Config.Enabled or elapsed > 1.5 or not torso.Parent then
+                    if bav then bav:Destroy() end clip(); conn:Disconnect(); return
+                end
+            end)
+        end
+    end)
+end
+
+toggle.MouseButton1Click:Connect(function() Config.Enabled = not Config.Enabled; toggle.Text = Config.Enabled and "ON" or "OFF"; toggle.BackgroundColor3 = Config.Enabled and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(200, 50, 50) end)
+local dragging, dragStart, startPos
+main.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; dragStart = i.Position; startPos = main.Position end end)
+UIS.InputChanged:Connect(function(i) if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then local d = i.Position - dragStart; main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end end)
+UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+
+RunService.Stepped:Connect(function() if isNoclipping and player.Character and Config.NoClipEnabled then for _, p in pairs(player.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end end)
+if player.Character then setup(player.Character) end
+player.CharacterAdded:Connect(setup)
