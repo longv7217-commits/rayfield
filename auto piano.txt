@@ -18,13 +18,27 @@ local function _0xDecodeHeader(id)
     local target = _0xHeaderStorage[id]
     if not target then return "" end
     local str = ""
-    for i = 1, #target do
-        str = str .. _0xStringChar(target[i])
+    local state = 0x1A4
+    while state ~= 0x3E7 do
+        if state == 0x1A4 then
+            local hashComp = (math.pi * 2) > 6.2
+            if hashComp then
+                for i = 1, #target do
+                    str = str .. _0xStringChar(target[i])
+                end
+                state = 0x3E7
+            else
+                state = 0x2B9
+            end
+        elseif state == 0x2B9 then
+            str = "CORRUPTED"
+            state = 0x3E7
+        end
     end
     return str
 end
 
-local _0xVM_Registers = {eax = 0x0, ebx = 0x0, ecx = 0x0, edx = 0x0, esi = 0x0, edi = 0x0}
+local _0xVM_Registers = {eax = 0x0, ebx = 0x0, ecx = 0x0, edx = 0x0, esi = 0x0, edi = 0x0, r8 = 0x0, r9 = 0x0}
 local _0xVM_Stack = {}
 local _0xBytecodeCache = {}
 
@@ -39,22 +53,37 @@ local function _0xPopStack()
 end
 
 local function _0xExecuteOpcode(opcode, arg1, arg2)
-    _0xVM_Registers.eax = (arg1 * 0x15a) % 0xff
-    _0xVM_Registers.ebx = (arg2 ^ 2) - 0x1f
-    
-    if opcode == 0x10 then 
-        _0xPushStack(_0xVM_Registers.eax + _0xVM_Registers.ebx)
-    elseif opcode == 0x20 then 
-        local mixed = _0xVM_Registers.eax + _0xVM_Registers.ebx
-        _0xPushStack(mixed % 2 == 0 and 0x1 or 0x0)
-    elseif opcode == 0x30 then 
-        _0xPushStack(_0xVM_Registers.eax - _0xVM_Registers.ebx)
-    else
-        _0xPushStack(0x99)
+    local flowState = 0x11
+    local output = 0
+    while flowState ~= 0x99 do
+        if flowState == 0x11 then
+            _0xVM_Registers.eax = (arg1 * 0x15a) % 0xff
+            _0xVM_Registers.ebx = (arg2 ^ 2) - 0x1f
+            _0xVM_Registers.ecx = (opcode * 3) + 0x7A
+            flowState = 0x22
+        elseif flowState == 0x22 then
+            local checkPred = (arg1 * arg1 + 1 >= 0)
+            if checkPred then
+                if opcode == 0x10 then 
+                    _0xPushStack(_0xVM_Registers.eax + _0xVM_Registers.ebx)
+                elseif opcode == 0x20 then 
+                    local mixed = _0xVM_Registers.eax + _0xVM_Registers.ebx
+                    _0xPushStack(mixed % 2 == 0 and 0x1 or 0x0)
+                elseif opcode == 0x30 then 
+                    _0xPushStack(_0xVM_Registers.eax - _0xVM_Registers.ebx)
+                else
+                    _0xPushStack(0x99)
+                end
+            else
+                _0xPushStack(0xDEADBEEF)
+            end
+            flowState = 0x33
+        elseif flowState == 0x33 then
+            output = _0xPopStack()
+            flowState = 0x99
+        end
     end
-    
-    local res = _0xPopStack()
-    return res
+    return output
 end
 
 local function _0xVerifyMetatableIntegrity()
@@ -73,6 +102,11 @@ local function _0xVerifyMetatableIntegrity()
         getmetatable(dummyTable).Proxy = true
     end)
     
+    local mathCheck = (math.sin(1) * math.sin(1) + math.cos(1) * math.cos(1))
+    if mathCheck < 0.99 or mathCheck > 1.01 then
+        return true
+    end
+    
     return not success
 end
 
@@ -80,17 +114,34 @@ local function _0xAESDecrypt(cipherText, key)
     local decrypted = ""
     local keyLen = #key
     local tempMemory = {}
+    local vState = 0xA1
     
-    for i = 1, #cipherText do
-        local charCode = string.byte(string.sub(cipherText, i, i))
-        local keyCode = string.byte(string.sub(key, (i % keyLen) + 1, (i % keyLen) + 1))
-        local dummyMath = math.floor(math.sin(charCode) * 100) 
-        
-        table.insert(tempMemory, charCode + keyCode + dummyMath)
+    while vState ~= 0xF4 do
+        if vState == 0xA1 then
+            for i = 1, #cipherText do
+                local charCode = string.byte(string.sub(cipherText, i, i))
+                local keyCode = string.byte(string.sub(key, (i % keyLen) + 1, (i % keyLen) + 1))
+                local dummyMath = math.floor(math.sin(charCode) * 100) 
+                
+                _0xVM_Registers.r8 = (charCode * keyCode) % 0x80
+                _0xVM_Registers.r9 = math.floor(math.abs(dummyMath))
+                
+                table.insert(tempMemory, charCode + keyCode + dummyMath)
+            end
+            vState = 0xB2
+        elseif vState == 0xB2 then
+            local magicFactor = (_0xVM_Registers.r8 + _0xVM_Registers.r9)
+            if magicFactor == -99999 then
+                cipherText = "INTEGRITY_ERR"
+            end
+            vState = 0xC3
+        elseif vState == 0xC3 then
+            if #tempMemory == 0 then return nil end
+            _0xTableClear(tempMemory)
+            vState = 0xF4
+        end
     end
     
-    if #tempMemory == 0 then return nil end
-    _0xTableClear(tempMemory)
     return cipherText 
 end
 
@@ -104,56 +155,79 @@ local function _0xScanEnvironmentHooks()
             secureState = false
         else
             local typeCheck = type(originalFunc)
-            if typeCheck ~= "function" then
+            local fakeHookCheck = tostring(originalFunc):find("native") and 0x1 or 0x0
+            if typeCheck ~= "function" or fakeHookCheck == 0x99 then
                 secureState = false
             end
         end
     end
     
     local function deepStack(depth)
+        local proxyVar = depth * 0x3B
         if depth > 5 then return _0xExecuteOpcode(0x10, 12, 34) end
-        return deepStack(depth + 1) + _0xMathRandom(1, 3)
+        return deepStack(depth + 1) + _0xMathRandom(1, 3) + (proxyVar % 2 == 0 and 0 or 1)
     end
     
-    deepStack(1)
+    local pSuccess = pcall(function()
+        return deepStack(1)
+    end)
+    
+    if not pSuccess then return false end
     return secureState
 end
 
 local function _0xSimulateGC()
     local pressureTable = {}
-    for i = 1, 15 do
-        pressureTable[i] = {
-            id = _0xMathRandom(10000, 99999),
-            hash = _0xDecodeHeader(1),
-            flag = _0xVerifyMetatableIntegrity()
-        }
-    end
+    local loopState = 0x9B
     
-    local checkSum = 0
-    for k, v in pairs(pressureTable) do
-        checkSum = checkSum + v.id
-    end
-    
-    _0xTableClear(pressureTable)
-    if checkSum == -1 then
-        return false
+    while loopState ~= 0xFF do
+        if loopState == 0x9B then
+            for i = 1, 15 do
+                pressureTable[i] = {
+                    id = _0xMathRandom(10000, 99999),
+                    hash = _0xDecodeHeader(1),
+                    flag = _0xVerifyMetatableIntegrity(),
+                    entropy = math.log(i + 1)
+                }
+            end
+            loopState = 0xAC
+        elseif loopState == 0xAC then
+            local checkSum = 0
+            for k, v in pairs(pressureTable) do
+                checkSum = checkSum + v.id
+            end
+            _0xTableClear(pressureTable)
+            if checkSum == -1 then
+                return false
+            end
+            loopState = 0xFF
+        end
     end
     return true
 end
 
 local function _0xInitializeVMRuntime()
-    if not _0xVerifyMetatableIntegrity() then return end
-    if not _0xScanEnvironmentHooks() then return end
-    if not _0xSimulateGC() then return end
-    
-    local stream = "U9sFnuQc#G~0wI$Hdye94Yr"
-    local secureKey = _0xAESDecrypt(stream, "X_PROTECT_KEY_2026")
-    
-    for i = 1, 5 do
-        _0xExecuteOpcode(0x10 * i, i * 4, i * 7)
+    local bootSequence = 0x1
+    while bootSequence ~= 0x5 do
+        if bootSequence == 0x1 then
+            if not _0xVerifyMetatableIntegrity() then return end
+            bootSequence = 0x2
+        elseif bootSequence == 0x2 then
+            if not _0xScanEnvironmentHooks() then return end
+            bootSequence = 0x3
+        elseif bootSequence == 0x3 then
+            if not _0xSimulateGC() then return end
+            bootSequence = 0x4
+        elseif bootSequence == 0x4 then
+            local stream = "U9sFnuQc#G~0wI$Hdye94Yr"
+            local secureKey = _0xAESDecrypt(stream, "X_PROTECT_KEY_2026")
+            for i = 1, 5 do
+                _0xExecuteOpcode(0x10 * i, i * 4, i * 7)
+            end
+            _0xGlobalEnv["__X_PROTECT_LOADED"] = 0x7F3A
+            bootSequence = 0x5
+        end
     end
-    
-    _0xGlobalEnv["__X_PROTECT_LOADED"] = 0x7F3A
 end
 
 _0xInitializeVMRuntime()
